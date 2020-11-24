@@ -1,25 +1,20 @@
-# This code converts preprocessed xlsx file to a wide format 
-# install.packages("tidyverse")
+# The code to convert multiple .csv files from psychopy 
+# to a wide format (one row par articipant)
+
 library(tidyverse)
 library(readxl)
+library(here)
 
+filenames <- list.files(here("raw"), full.names = TRUE)
 
-filenames <- list.files("./raw", full.names = TRUE)
-
-# initialize the container
+# initialize the container for all data frames
 all_df <- tibble()
 
-anton_df <- read_csv(filenames[1])
-
-# # Checking
-# anton_df %>% select(`Task Type`, Navon_corr, OBW_overestimation_percent,
-#                     orientation_response, size_error,
-#                     `Reaction Time`) %>% View()
-
+# Loop through each file 
 for(i in filenames){
-  print(i)
-  anton_df <- read_csv(i)
-  anton_df <- anton_df %>% 
+  print(paste("Processing", i))
+  participant_df <- read_csv(i, col_types = list())
+  participant_df <- participant_df %>% 
     # Task Types are:
     # 1. Navon
     # 2. OBW
@@ -58,7 +53,7 @@ for(i in filenames){
            everything())
 
 # Outlier Detection (flag)
-  anton_df_flagged <- anton_df %>%
+  participant_df_flagged <- participant_df %>%
     group_by(`Task Type`) %>%
     # Reaction
     mutate("Mean within Condition" = mean(`Reaction Time`, na.rm = TRUE), "SD within Condition" = sd(`Reaction Time`, na.rm = TRUE),
@@ -85,7 +80,7 @@ for(i in filenames){
     select(`Mean within Condition`, `SD within Condition`, `Reaction Time Outlier`, everything())
 
 # 
-anton_df_flagged_summary <- anton_df_flagged %>%
+  participant_df_flagged_summary <- participant_df_flagged %>%
   mutate("Delete for Outlier" = case_when(
     `Task Type` == "Navon" ~ `Reaction Time Outlier`,
     `Task Type` == "OBW" ~ `Accuracy Outlier`,
@@ -107,28 +102,17 @@ anton_df_flagged_summary <- anton_df_flagged %>%
                          `Task Type` == "Orientation" ~ "Orientation",
                          `Task Type` == "Size" ~ `Size Condition`))
 
-my_longest_table <- anton_df_flagged_summary %>%
+long_df <- participant_df_flagged_summary %>%
   ungroup() %>%
   select(`Mean RT`, `Mean Accuracy`, `Mean Overestimation`, `Mean Error Degrees`, key)
 
-
-#### TO WIDE !!!!!
-wide_output <- my_longest_table %>% filter(!is.na(key)) %>% pivot_longer(-key) %>% 
+#### TO WIDE with only one row
+wide_output <- long_df %>% filter(!is.na(key)) %>% pivot_longer(-key) %>% 
   mutate(myname = paste0(key, " - ", name)) %>%
   select(-key, -name) %>%
   pivot_wider(names_from = myname, values_from = value) 
 
-# colnames(wide_output)
-
-# wide_output <- wide_output %>%
-#   select(!any(is.nan(.))
-#   ) %>%
-#   mutate("Filename" = i) %>% 
-#   select(Filename, everything())
-
-
-#write_csv(wide_output, paste0(i, "- wide.csv"))
-
+# Bind to the all df
 all_df <- all_df %>%
   bind_rows(wide_output)
 }
@@ -137,4 +121,5 @@ all_df <- all_df %>%
 # https://stackoverflow.com/a/45383054/6205282
 all_df <- all_df %>% select_if(~sum(!is.na(.)) > 0)
 
-write_csv(all_df, "Everything.csv")
+# Write out the output
+write_csv(all_df, here("output/Everything.csv"))
